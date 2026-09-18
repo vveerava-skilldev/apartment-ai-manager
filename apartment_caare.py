@@ -13,13 +13,13 @@ st.markdown("""
     <style>
     .main-title { color: #1A365D; font-size: 36px; font-weight: bold; text-align: center; margin-bottom: 5px; }
     .sub-title { color: #4A5568; font-size: 16px; text-align: center; margin-bottom: 25px; }
-    .alert-card { background-color: #FFF5F5; border-left: 5px solid #E53E3E; padding: 12px 18px; border-radius: 4px; margin-bottom: 15px; }
-    .metric-card { background-color: #F7FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; text-align: center; }
+    .alert-card { background-color: #FFF5F5; border-left: 5px solid #E53E3E; padding: 12px 18px; border-radius: 4px; margin-bottom: 12px; }
+    .meeting-card { background-color: #EBF8FF; border-left: 5px solid #3182CE; padding: 12px 18px; border-radius: 4px; margin-bottom: 12px; }
     </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# DATABASE SETUP (SQLite with Audit Logs)
+# DATABASE SETUP (SQLite with Audit Logs & Reminders)
 # -----------------------------------------------------------------------------
 DB_FILE = "sri_krishna_mani.db"
 
@@ -68,9 +68,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
             flat TEXT,
+            months_paid TEXT,
             amount REAL,
             payment_mode TEXT,
-            txn_id TEXT
+            txn_id TEXT,
+            remarks TEXT
         )
     """)
 
@@ -138,9 +140,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS meetings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT,
+            time TEXT,
             title TEXT,
             attendees TEXT,
-            summary_mom TEXT
+            summary_mom TEXT,
+            status TEXT -- 'Scheduled', 'Completed'
         )
     """)
 
@@ -164,6 +168,7 @@ def init_db():
             ("Water Tank Cleaning", "CleanAqua", "2026-09-22", 7)
         ])
         cursor.execute("INSERT INTO corpus (date, type, flat_or_vendor, description, amount) VALUES ('2026-01-01', 'Contribution', 'All Flats', 'Initial Corpus Pool', 150000)")
+        cursor.execute("INSERT INTO meetings (date, time, title, attendees, summary_mom, status) VALUES ('2026-09-25', '10:00 AM', 'Annual General Body Meeting', 'All Residents', 'Discussion on festival celebrations and paint renovation.', 'Scheduled')")
 
     conn.commit()
     conn.close()
@@ -239,21 +244,30 @@ st.markdown("<div class='sub-title'>Co-operative Housing Management & Tracking P
 monthly_fee = get_current_maintenance_fee()
 
 # -----------------------------------------------------------------------------
-# PAGE 1: PUBLIC DASHBOARD
+# PAGE 1: PUBLIC DASHBOARD WITH AMC & MEETING ALERTS
 # -----------------------------------------------------------------------------
 if page == "📊 Public Dashboard":
+    # 1. AMC Equipment Alerts
     amcs = run_query("SELECT * FROM amc_schedules")
-    active_alerts = []
+    active_amc_alerts = []
     for _, amc in amcs.iterrows():
         due_date = datetime.strptime(amc["next_due"], "%Y-%m-%d").date()
         days_left = (due_date - datetime.now().date()).days
         if days_left <= amc["alert_days"]:
-            active_alerts.append(f"⚠️ **{amc['equipment']} ({amc['vendor']})** service is due in **{days_left} days** (Due Date: {amc['next_due']})")
+            active_amc_alerts.append(f"⚠️ **{amc['equipment']} ({amc['vendor']})** service is due in **{days_left} days** (Due: {amc['next_due']})")
 
-    if active_alerts:
-        st.subheader("🔔 Active Dashboard Alerts")
-        for alert in active_alerts:
-            st.markdown(f"<div class='alert-card'>{alert}</div>", unsafe_allow_html=True)
+    # 2. Upcoming Meeting Alerts
+    upcoming_meetings = run_query("SELECT * FROM meetings WHERE status='Scheduled'")
+    meeting_alerts = []
+    for _, m in upcoming_meetings.iterrows():
+        meeting_alerts.append(f"📅 **Upcoming Meeting:** {m['title']} | **Date:** {m['date']} at {m['time']} | **Attendees:** {m['attendees']}")
+
+    if active_amc_alerts or meeting_alerts:
+        st.subheader("🔔 Dashboard Alerts & Announcements")
+        for m_alert in meeting_alerts:
+            st.markdown(f"<div class='meeting-card'>{m_alert}</div>", unsafe_allow_html=True)
+        for a_alert in active_amc_alerts:
+            st.markdown(f"<div class='alert-card'>{a_alert}</div>", unsafe_allow_html=True)
 
     f_df = run_query("SELECT * FROM flats")
     e_df = run_query("SELECT SUM(amount) as total FROM expenses")
@@ -268,8 +282,8 @@ if page == "📊 Public Dashboard":
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("💰 Maintenance Rate", f"₹{monthly_fee:,.0f} / mo")
     m2.metric("✅ Payment Progress", f"{paid_flats} Paid / {pending_flats} Pending")
-    m3.metric("⚠️ Total Pending Dues", f"₹{pending_amount:,.0f}")
-    m4.metric("🏛️ Corpus Pool Balance", f"₹{corpus_bal:,.0f}")
+    m3.metric("⚠️ Pending Dues", f"₹{pending_amount:,.0f}")
+    m4.metric("🏛️ Corpus Pool", f"₹{corpus_bal:,.0f}")
 
     st.markdown("---")
 
@@ -279,58 +293,95 @@ if page == "📊 Public Dashboard":
         st.dataframe(f_df, use_container_width=True, hide_index=True)
 
     with col_r:
-        st.subheader("🧾 Recent Maintenance Expenses")
+        st.subheader("🧾 Recent Expenses")
         exp_df = run_query("SELECT date, category, description, amount FROM expenses ORDER BY id DESC LIMIT 5")
         st.dataframe(exp_df, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# PAGE 2: MAINTENANCE TRACKING & PAYMENTS
+# PAGE 2: MAINTENANCE TRACKING & PAYMENTS (MULTI-MONTH SELECTION)
 # -----------------------------------------------------------------------------
 elif page == "💳 Maintenance Tracking & Payments":
     st.title("💳 Monthly Maintenance Portal")
     st.info(f"Current Configured Rate: **₹{monthly_fee:,.2f} / month** per flat.")
 
-    t1, t2, t3 = st.tabs(["💳 Pay / Update Status", "📜 Payment History Log", "⚙️ Config & Rate Revision History"])
+    t1, t2, t3 = st.tabs(["💳 Pay Maintenance (Multi-Month)", "📜 Payment History Log", "⚙️ Config & Rate History"])
 
     with t1:
-        st.subheader("Make or Record Maintenance Payment")
-        selected_flat = st.selectbox("Select Flat Number:", ["101", "102", "201", "202", "301"], 
-                                     index=["101", "102", "201", "202", "301"].index(current_flat) if current_flat else 0)
-        
-        flat_status_df = run_query("SELECT * FROM flats WHERE flat=?", (selected_flat,))
-        flat_info = flat_status_df.iloc[0]
+        st.subheader("💳 Submit Maintenance Payment Details")
+        st.caption("Select single or multiple backlog/advance months to record payment.")
 
-        st.write(f"**Flat Owner:** {flat_info['owner_name']}")
-        st.write(f"**Current Status:** {flat_info['status']}")
-        st.write(f"**Amount Due:** ₹{0.0 if flat_info['status'] == 'Paid' else monthly_fee:,.2f}")
+        with st.form("resident_payment_form", clear_on_submit=True):
+            st.markdown("#### 📌 Mandatory Information")
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                selected_flat = st.selectbox(
+                    "Flat Number *", 
+                    ["101", "102", "201", "202", "301"],
+                    index=["101", "102", "201", "202", "301"].index(current_flat) if current_flat else 0
+                )
+                pay_mode = st.selectbox("Payment Method *", ["UPI / QR Code", "Net Banking / NEFT", "Cheque", "Cash"])
 
-        if flat_info['status'] == "Pending":
-            with st.form("pay_form"):
-                pay_mode = st.selectbox("Payment Method", ["UPI / QR", "Net Banking", "Cash / Cheque"])
-                ref_id = st.text_input("Transaction / Reference ID", placeholder="e.g. UPI/123456789")
-                if st.form_submit_button("Submit Payment"):
-                    now_str = str(datetime.now().strftime("%Y-%m-%d %H:%M"))
-                    execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (now_str, selected_flat))
-                    execute_db("INSERT INTO payment_history (timestamp, flat, amount, payment_mode, txn_id) VALUES (?, ?, ?, ?, ?)",
-                               (now_str, selected_flat, monthly_fee, pay_mode, ref_id))
-                    st.success(f"Payment of ₹{monthly_fee} recorded for Flat {selected_flat}!")
-                    st.rerun()
-        else:
-            st.success("✅ Maintenance paid for this cycle.")
+            with c2:
+                # Multi-select for backlogs / advance payments
+                month_options = [
+                    "Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026",
+                    "Jul 2026", "Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"
+                ]
+                selected_months = st.multiselect("Select Payment Month(s) / Backlog *", options=month_options, default=["Sep 2026"])
+                
+                calculated_amount = float(len(selected_months) * monthly_fee)
+                paid_amount = st.number_input("Total Calculated Amount (₹) *", min_value=1.0, value=calculated_amount if calculated_amount > 0 else monthly_fee, step=100.0)
+
+            c3, c4 = st.columns(2)
+            with c3:
+                payment_date = st.date_input("Date of Payment *", value=datetime.now().date())
+            with c4:
+                ref_id = st.text_input("Transaction ID / Reference No. *", placeholder="e.g., UPI/4261908234 or Cheque #109283")
+
+            st.markdown("---")
+            st.markdown("#### 📑 Optional Details")
+            c5, c6 = st.columns(2)
+            with c5:
+                payer_name = st.text_input("Payer Name", placeholder="Name on UPI / Bank Account")
+            with c6:
+                bank_name = st.text_input("Bank / App Used", placeholder="e.g., Google Pay, PhonePe, HDFC")
+
+            remarks = st.text_area("Additional Notes / Remarks", placeholder="e.g., Paid backlog for Aug & Sep combined.")
+
+            submit_payment = st.form_submit_button("🚀 Submit Payment Record")
+
+        if submit_payment:
+            if not ref_id.strip():
+                st.error("❌ Transaction ID / Reference No. is required.")
+            elif not selected_months:
+                st.error("❌ Please select at least one month for payment.")
+            else:
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                p_date_str = payment_date.strftime("%Y-%m-%d")
+                months_str = ", ".join(selected_months)
+
+                execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (p_date_str, selected_flat))
+                execute_db("""
+                    INSERT INTO payment_history (timestamp, flat, months_paid, amount, payment_mode, txn_id, remarks)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (now_str, selected_flat, months_str, paid_amount, f"{pay_mode} ({payer_name})" if payer_name else pay_mode, f"{ref_id} | Bank: {bank_name}" if bank_name else ref_id, remarks))
+
+                st.success(f"✅ Payment of ₹{paid_amount} for **{months_str}** submitted for Flat {selected_flat}!")
+                st.balloons()
 
     with t2:
         st.subheader("Historical Payment Audit Log")
-        history_df = run_query("SELECT timestamp as Date, flat as 'Flat No', amount as Amount, payment_mode as Method, txn_id as 'Txn Ref' FROM payment_history ORDER BY id DESC")
+        history_df = run_query("SELECT timestamp as Date, flat as 'Flat No', months_paid as 'Month(s)', amount as Amount, payment_mode as Method, txn_id as 'Txn Ref', remarks as Remarks FROM payment_history ORDER BY id DESC")
         st.dataframe(history_df, use_container_width=True, hide_index=True)
 
     with t3:
         st.subheader("Maintenance Rate Revision History")
-        st.caption("Tracks all historical revisions to the monthly maintenance amount.")
         rev_df = run_query("SELECT timestamp as Date, old_amount as 'Old Rate (₹)', new_amount as 'New Rate (₹)', changed_by as 'Changed By', reason as Reason FROM maintenance_config_history ORDER BY id DESC")
         st.dataframe(rev_df, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# PAGE 3: AI VOICE / TEXT COMMAND
+# PAGE 3: AI VOICE / TEXT ASSISTANT
 # -----------------------------------------------------------------------------
 elif page == "🤖 AI Voice/Text Assistant":
     st.title("🤖 Voice & Text Command Assistant")
@@ -343,11 +394,11 @@ elif page == "🤖 AI Voice/Text Assistant":
                 flat_no = match.group(1)
                 now_str = str(datetime.now().strftime("%Y-%m-%d %H:%M"))
                 execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (now_str, flat_no))
-                execute_db("INSERT INTO payment_history (timestamp, flat, amount, payment_mode, txn_id) VALUES (?, ?, ?, ?, ?)",
-                           (now_str, flat_no, monthly_fee, "Voice Assistant", "AUTO-VOICE-CMD"))
-                st.success(f"🤖 Database Updated: Flat {flat_no} marked as Paid (₹{monthly_fee}).")
+                execute_db("INSERT INTO payment_history (timestamp, flat, months_paid, amount, payment_mode, txn_id, remarks) VALUES (?, ?, 'Current Month', ?, 'Voice Assistant', 'AUTO-VOICE', '')",
+                           (now_str, flat_no, monthly_fee))
+                st.success(f"🤖 Flat {flat_no} marked as Paid (₹{monthly_fee}).")
             else:
-                st.error("🤖 Could not find a valid flat number (101, 102, 201, 202, 301).")
+                st.error("🤖 Could not find a valid flat number.")
 
 # -----------------------------------------------------------------------------
 # PAGE 4: CORPUS & PROPOSALS
@@ -371,11 +422,12 @@ elif page == "🏛️ Corpus & Proposals":
         st.dataframe(run_query("SELECT id, date, proposed_by, title, estimated_cost, justification, status FROM proposed_expenses ORDER BY id DESC"), use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# PAGE 5: AMCS
+# PAGE 5: AMCS & SCHEDULES
 # -----------------------------------------------------------------------------
 elif page == "📅 AMCs & Schedules":
-    st.title("📅 AMCs & Equipment Schedules")
-    st.dataframe(run_query("SELECT * FROM amc_schedules"), use_container_width=True, hide_index=True)
+    st.title("📅 Equipment Maintenance & AMC Schedules")
+    amc_df = run_query("SELECT id, equipment as Equipment, vendor as Vendor, next_due as 'Next Service Due', alert_days as 'Alert Lead Days' FROM amc_schedules")
+    st.dataframe(amc_df, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
 # PAGE 6: REPORT ISSUES
@@ -393,40 +445,108 @@ elif page == "🚨 Report Issue / Complaints":
     st.dataframe(run_query("SELECT * FROM issues ORDER BY id DESC"), use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# PAGE 7: MEETINGS & MINUTES (MOM)
+# PAGE 7: MEETINGS & MINUTES (MOM) WITH ALERTS
 # -----------------------------------------------------------------------------
 elif page == "📝 Meetings & Minutes (MOM)":
-    st.title("📝 Meetings & MOM")
-    st.dataframe(run_query("SELECT date, title, attendees, summary_mom FROM meetings ORDER BY id DESC"), use_container_width=True, hide_index=True)
+    st.title("📝 Society Meetings & Minutes")
+    
+    st.subheader("📅 Scheduled Upcoming Meetings")
+    sched_df = run_query("SELECT date as Date, time as Time, title as Title, attendees as Attendees, status as Status FROM meetings WHERE status='Scheduled'")
+    st.dataframe(sched_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.subheader("📜 Past Meeting Minutes (MOM)")
+    mom_df = run_query("SELECT date as Date, title as Title, attendees as Attendees, summary_mom as Minutes FROM meetings WHERE status='Completed' OR summary_mom != '' ORDER BY id DESC")
+    st.dataframe(mom_df, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# PAGE 8: ADMIN CONTROL PANEL
+# PAGE 8: ADMIN CONTROL PANEL (AMC & MEETING ALERT MANAGEMENT)
 # -----------------------------------------------------------------------------
 elif page == "⚙️ Admin Control Panel":
     st.title("⚙️ Admin Control Panel")
     if not st.session_state.admin_logged_in:
         st.warning("🔒 Admin Passcode Required.")
     else:
-        a1, a2, a3, a4, a5 = st.tabs(["⚙️ Configure Fee Rate", "Approvals", "Corpus Ops", "Record MOM", "Database Export"])
+        a1, a2, a3, a4, a5, a6 = st.tabs([
+            "⚙️ Fee Rate", 
+            "🛠️ Manage AMCs", 
+            "📅 Schedule Meetings", 
+            "Approvals", 
+            "Corpus Ops", 
+            "Database Export"
+        ])
 
         # Tab 1: Configure Fee
         with a1:
-            st.subheader("Configure Monthly Maintenance Rate")
-            st.write(f"Current Monthly Rate: **₹{monthly_fee:,.2f}**")
+            st.subheader("Configure Maintenance Fee")
             with st.form("config_fee_form"):
                 new_rate = st.number_input("New Monthly Rate (₹)", min_value=0.0, value=monthly_fee, step=100.0)
                 revision_reason = st.text_area("Reason for Rate Revision")
-                if st.form_submit_button("Update & Log Revision"):
+                if st.form_submit_button("Update Rate"):
                     if new_rate != monthly_fee:
-                        now_str = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         execute_db("INSERT OR REPLACE INTO settings VALUES ('monthly_maintenance', ?)", (str(new_rate),))
                         execute_db("INSERT INTO maintenance_config_history (timestamp, old_amount, new_amount, changed_by, reason) VALUES (?, ?, ?, ?, ?)",
                                    (now_str, monthly_fee, new_rate, "Admin", revision_reason))
-                        st.success(f"Maintenance rate revised to ₹{new_rate}! Change recorded in audit history.")
+                        st.success(f"Rate updated to ₹{new_rate}!")
                         st.rerun()
 
-        # Tab 2: Approvals
+        # Tab 2: Admin AMC & Equipment Management
         with a2:
+            st.subheader("🛠️ Add or Update Equipment AMC")
+            with st.form("add_amc_form"):
+                eq_name = st.text_input("Equipment / Service Name", placeholder="e.g. Generator Service")
+                eq_vendor = st.text_input("Vendor Name", placeholder="e.g. Kirloskar Care")
+                eq_next_due = st.date_input("Next Service Due Date")
+                eq_alert_days = st.number_input("Alert Lead Days (Trigger alert X days prior)", min_value=1, value=15)
+                
+                if st.form_submit_button("Save AMC Contract"):
+                    execute_db("INSERT INTO amc_schedules (equipment, vendor, next_due, alert_days) VALUES (?, ?, ?, ?)",
+                               (eq_name, eq_vendor, str(eq_next_due), eq_alert_days))
+                    st.success("AMC Schedule updated!")
+                    st.rerun()
+
+            st.markdown("---")
+            st.write("**Existing AMC Contracts (Delete Option):**")
+            existing_amcs = run_query("SELECT * FROM amc_schedules")
+            for _, amc_item in existing_amcs.iterrows():
+                col_info, col_del = st.columns([4, 1])
+                col_info.write(f"• **{amc_item['equipment']}** ({amc_item['vendor']}) — Next Due: {amc_item['next_due']}")
+                if col_del.button("Delete", key=f"del_amc_{amc_item['id']}"):
+                    execute_db("DELETE FROM amc_schedules WHERE id=?", (amc_item['id'],))
+                    st.success("Deleted!")
+                    st.rerun()
+
+        # Tab 3: Schedule Meetings & Send Alerts
+        with a3:
+            st.subheader("📢 Schedule Meeting & Broadcast Alert")
+            with st.form("schedule_meeting_form"):
+                m_date = st.date_input("Meeting Date")
+                m_time = st.text_input("Meeting Time", placeholder="e.g. 10:30 AM")
+                m_title = st.text_input("Meeting Title / Agenda")
+                m_attendees = st.text_input("Target Attendees", value="All Flat Owners")
+                
+                if st.form_submit_button("Schedule & Broadcast Alert"):
+                    execute_db("INSERT INTO meetings (date, time, title, attendees, summary_mom, status) VALUES (?, ?, ?, ?, '', 'Scheduled')",
+                               (str(m_date), m_time, m_title, m_attendees))
+                    st.success("Meeting Scheduled! Alert broadcasted to Dashboard.")
+                    st.rerun()
+
+            st.markdown("---")
+            st.subheader("📝 Complete Meeting & Save MOM")
+            scheduled_meetings = run_query("SELECT * FROM meetings WHERE status='Scheduled'")
+            if not scheduled_meetings.empty:
+                for _, sm in scheduled_meetings.iterrows():
+                    st.write(f"**{sm['title']}** on {sm['date']} at {sm['time']}")
+                    with st.form(f"mom_form_{sm['id']}"):
+                        mom_text = st.text_area("Minutes of Meeting (MOM)")
+                        if st.form_submit_button("Mark Completed & Save MOM"):
+                            execute_db("UPDATE meetings SET summary_mom=?, status='Completed' WHERE id=?", (mom_text, sm['id']))
+                            st.success("MOM Saved and Meeting Archived!")
+                            st.rerun()
+
+        # Tab 4: Approvals
+        with a4:
             pending_props = run_query("SELECT * FROM proposed_expenses WHERE status='Pending'")
             if pending_props.empty:
                 st.info("No pending proposals.")
@@ -441,8 +561,8 @@ elif page == "⚙️ Admin Control Panel":
                         execute_db("UPDATE proposed_expenses SET status='Rejected' WHERE id=?", (prop['id'],))
                         st.rerun()
 
-        # Tab 3: Corpus Ops
-        with a3:
+        # Tab 5: Corpus Ops
+        with a5:
             with st.form("corpus_form"):
                 c_type = st.selectbox("Type", ["Contribution", "Expenditure"])
                 c_party = st.text_input("Source/Vendor")
@@ -453,18 +573,7 @@ elif page == "⚙️ Admin Control Panel":
                                (str(datetime.now().date()), c_type, c_party, c_desc, c_amt))
                     st.success("Corpus updated!")
 
-        # Tab 4: MOM
-        with a4:
-            with st.form("mom_form"):
-                m_title = st.text_input("Title")
-                m_att = st.text_input("Attendees")
-                m_summary = st.text_area("Summary")
-                if st.form_submit_button("Save MOM"):
-                    execute_db("INSERT INTO meetings (date, title, attendees, summary_mom) VALUES (?, ?, ?, ?)",
-                               (str(datetime.now().date()), m_title, m_att, m_summary))
-                    st.success("MOM recorded!")
-
-        # Tab 5: Export
-        with a5:
+        # Tab 6: Export
+        with a6:
             with open(DB_FILE, "rb") as fp:
-                st.download_button("💾 Download Database File (.db)", fp, file_name="sri_krishna_mani.db", mime="application/x-sqlite3")
+                st.download_button("💾 Download SQLite Database (.db)", fp, file_name="sri_krishna_mani.db", mime="application/x-sqlite3")
