@@ -27,8 +27,161 @@ def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
-
 def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Base Tables Creation
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS flats (
+            flat TEXT PRIMARY KEY,
+            owner_name TEXT,
+            status TEXT,
+            last_paid TEXT
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_config_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            old_amount REAL,
+            new_amount REAL,
+            changed_by TEXT,
+            reason TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS payment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            flat TEXT,
+            months_paid TEXT,
+            amount REAL,
+            payment_mode TEXT,
+            txn_id TEXT,
+            remarks TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            category TEXT,
+            description TEXT,
+            amount REAL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS corpus (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            type TEXT,
+            flat_or_vendor TEXT,
+            description TEXT,
+            amount REAL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS proposed_expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            proposed_by TEXT,
+            title TEXT,
+            estimated_cost REAL,
+            justification TEXT,
+            status TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS amc_schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipment TEXT,
+            vendor TEXT,
+            next_due TEXT,
+            alert_days INTEGER
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS issues (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            flat TEXT,
+            category TEXT,
+            issue TEXT,
+            status TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS meetings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            time TEXT,
+            title TEXT,
+            attendees TEXT,
+            summary_mom TEXT,
+            status TEXT
+        )
+    """)
+
+    # -------------------------------------------------------------------------
+    # MIGRATIONS: Add missing columns if upgrading from an older DB schema
+    # -------------------------------------------------------------------------
+    migrations = [
+        ("payment_history", "months_paid", "TEXT DEFAULT 'Current Month'"),
+        ("payment_history", "remarks", "TEXT DEFAULT ''"),
+        ("meetings", "time", "TEXT DEFAULT '10:00 AM'"),
+        ("meetings", "status", "TEXT DEFAULT 'Completed'")
+    ]
+
+    for table, column, col_type in migrations:
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    # Seed Default Data if fresh DB
+    cursor.execute("SELECT COUNT(*) FROM flats")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany("INSERT INTO flats VALUES (?, ?, ?, ?)", [
+            ("101", "Sharma", "Paid", "2026-09-01"),
+            ("102", "Verma", "Pending", "-"),
+            ("201", "Rao", "Paid", "2026-09-03"),
+            ("202", "Gupta", "Pending", "-"),
+            ("301", "Patel", "Paid", "2026-09-05"),
+        ])
+        cursor.execute("INSERT OR REPLACE INTO settings VALUES ('monthly_maintenance', '2000')")
+        cursor.execute("""
+            INSERT INTO maintenance_config_history (timestamp, old_amount, new_amount, changed_by, reason) 
+            VALUES (?, ?, ?, ?, ?)
+        """, (str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")), 0, 2000, "System Admin", "Initial Maintenance Rate Set"))
+        
+        cursor.executemany("INSERT INTO amc_schedules (equipment, vendor, next_due, alert_days) VALUES (?, ?, ?, ?)", [
+            ("Water Softener System", "Zero B Care", "2026-10-15", 30),
+            ("Lift / Elevator", "Otis India", "2026-09-25", 10),
+            ("Water Tank Cleaning", "CleanAqua", "2026-09-22", 7)
+        ])
+        cursor.execute("INSERT INTO corpus (date, type, flat_or_vendor, description, amount) VALUES ('2026-01-01', 'Contribution', 'All Flats', 'Initial Corpus Pool', 150000)")
+        cursor.execute("INSERT INTO meetings (date, time, title, attendees, summary_mom, status) VALUES ('2026-09-25', '10:00 AM', 'Annual General Body Meeting', 'All Residents', 'Discussion on festival celebrations.', 'Scheduled')")
+
+    conn.commit()
+    conn.close()
+    
+def init_db_old():
     conn = get_db_connection()
     cursor = conn.cursor()
     
