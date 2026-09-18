@@ -453,6 +453,88 @@ if page == "📊 Public Dashboard":
 # -----------------------------------------------------------------------------
 # PAGE 2: MAINTENANCE TRACKING & PAYMENTS (MULTI-MONTH SELECTION)
 # -----------------------------------------------------------------------------
+# elif page == "💳 Maintenance Tracking & Payments":
+#     st.title("💳 Monthly Maintenance Portal")
+#     st.info(f"Current Configured Rate: **₹{monthly_fee:,.2f} / month** per flat.")
+
+#     t1, t2, t3 = st.tabs(["💳 Pay Maintenance (Multi-Month)", "📜 Payment History Log", "⚙️ Config & Rate History"])
+
+#     with t1:
+#         st.subheader("💳 Submit Maintenance Payment Details")
+#         st.caption("Select single or multiple backlog/advance months to record payment.")
+
+#         with st.form("resident_payment_form", clear_on_submit=True):
+#             st.markdown("#### 📌 Mandatory Information")
+#             c1, c2 = st.columns(2)
+            
+#             with c1:
+#                 selected_flat = st.selectbox(
+#                     "Flat Number *", 
+#                     ["101", "102", "201", "202", "301"],
+#                     index=["101", "102", "201", "202", "301"].index(current_flat) if current_flat else 0
+#                 )
+#                 pay_mode = st.selectbox("Payment Method *", ["UPI / QR Code", "Net Banking / NEFT", "Cheque", "Cash"])
+
+#             with c2:
+#                 # Multi-select for backlogs / advance payments
+#                 month_options = [
+#                     "Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026",
+#                     "Jul 2026", "Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"
+#                 ]
+#                 selected_months = st.multiselect("Select Payment Month(s) / Backlog *", options=month_options, default=["Sep 2026"])
+                
+#                 calculated_amount = float(len(selected_months) * monthly_fee)
+#                 paid_amount = st.number_input("Total Calculated Amount (₹) *", min_value=1.0, value=calculated_amount if calculated_amount > 0 else monthly_fee, step=100.0)
+
+#             c3, c4 = st.columns(2)
+#             with c3:
+#                 payment_date = st.date_input("Date of Payment *", value=datetime.now().date())
+#             with c4:
+#                 ref_id = st.text_input("Transaction ID / Reference No. *", placeholder="e.g., UPI/4261908234 or Cheque #109283")
+
+#             st.markdown("---")
+#             st.markdown("#### 📑 Optional Details")
+#             c5, c6 = st.columns(2)
+#             with c5:
+#                 payer_name = st.text_input("Payer Name", placeholder="Name on UPI / Bank Account")
+#             with c6:
+#                 bank_name = st.text_input("Bank / App Used", placeholder="e.g., Google Pay, PhonePe, HDFC")
+
+#             remarks = st.text_area("Additional Notes / Remarks", placeholder="e.g., Paid backlog for Aug & Sep combined.")
+
+#             submit_payment = st.form_submit_button("🚀 Submit Payment Record")
+
+#         if submit_payment:
+#             if not ref_id.strip():
+#                 st.error("❌ Transaction ID / Reference No. is required.")
+#             elif not selected_months:
+#                 st.error("❌ Please select at least one month for payment.")
+#             else:
+#                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#                 p_date_str = payment_date.strftime("%Y-%m-%d")
+#                 months_str = ", ".join(selected_months)
+
+#                 execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (p_date_str, selected_flat))
+#                 execute_db("""
+#                     INSERT INTO payment_history (timestamp, flat, months_paid, amount, payment_mode, txn_id, remarks)
+#                     VALUES (?, ?, ?, ?, ?, ?, ?)
+#                 """, (now_str, selected_flat, months_str, paid_amount, f"{pay_mode} ({payer_name})" if payer_name else pay_mode, f"{ref_id} | Bank: {bank_name}" if bank_name else ref_id, remarks))
+
+#                 st.success(f"✅ Payment of ₹{paid_amount} for **{months_str}** submitted for Flat {selected_flat}!")
+#                 st.balloons()
+
+#     with t2:
+#         st.subheader("Historical Payment Audit Log")
+#         history_df = run_query("SELECT timestamp as Date, flat as 'Flat No', months_paid as 'Month(s)', amount as Amount, payment_mode as Method, txn_id as 'Txn Ref', remarks as Remarks FROM payment_history ORDER BY id DESC")
+#         st.dataframe(history_df, use_container_width=True, hide_index=True)
+
+#     with t3:
+#         st.subheader("Maintenance Rate Revision History")
+#         rev_df = run_query("SELECT timestamp as Date, old_amount as 'Old Rate (₹)', new_amount as 'New Rate (₹)', changed_by as 'Changed By', reason as Reason FROM maintenance_config_history ORDER BY id DESC")
+#         st.dataframe(rev_df, use_container_width=True, hide_index=True)
+# -----------------------------------------------------------------------------
+# PAGE 2: MAINTENANCE TRACKING & PAYMENTS (DUPLICATE DETECTION ENHANCED)
+# -----------------------------------------------------------------------------
 elif page == "💳 Maintenance Tracking & Payments":
     st.title("💳 Monthly Maintenance Portal")
     st.info(f"Current Configured Rate: **₹{monthly_fee:,.2f} / month** per flat.")
@@ -463,7 +545,7 @@ elif page == "💳 Maintenance Tracking & Payments":
         st.subheader("💳 Submit Maintenance Payment Details")
         st.caption("Select single or multiple backlog/advance months to record payment.")
 
-        with st.form("resident_payment_form", clear_on_submit=True):
+        with st.form("resident_payment_form"):
             st.markdown("#### 📌 Mandatory Information")
             c1, c2 = st.columns(2)
             
@@ -476,7 +558,6 @@ elif page == "💳 Maintenance Tracking & Payments":
                 pay_mode = st.selectbox("Payment Method *", ["UPI / QR Code", "Net Banking / NEFT", "Cheque", "Cash"])
 
             with c2:
-                # Multi-select for backlogs / advance payments
                 month_options = [
                     "Jan 2026", "Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026",
                     "Jul 2026", "Aug 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dec 2026"
@@ -502,37 +583,70 @@ elif page == "💳 Maintenance Tracking & Payments":
 
             remarks = st.text_area("Additional Notes / Remarks", placeholder="e.g., Paid backlog for Aug & Sep combined.")
 
+            st.markdown("---")
+            # Override Checkbox for Duplicates
+            allow_duplicate = st.checkbox("⚠️ Force Submission / Allow Duplicate Payment Entry for selected month(s)")
+
             submit_payment = st.form_submit_button("🚀 Submit Payment Record")
 
+        # Submission Logic & Validation
         if submit_payment:
             if not ref_id.strip():
                 st.error("❌ Transaction ID / Reference No. is required.")
             elif not selected_months:
                 st.error("❌ Please select at least one month for payment.")
             else:
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                p_date_str = payment_date.strftime("%Y-%m-%d")
-                months_str = ", ".join(selected_months)
+                # Check database for existing payments for this flat and selected month(s)
+                existing_records = run_query(
+                    "SELECT timestamp, months_paid, amount, txn_id FROM payment_history WHERE flat=?", 
+                    (selected_flat,)
+                )
 
-                execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (p_date_str, selected_flat))
-                execute_db("""
-                    INSERT INTO payment_history (timestamp, flat, months_paid, amount, payment_mode, txn_id, remarks)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (now_str, selected_flat, months_str, paid_amount, f"{pay_mode} ({payer_name})" if payer_name else pay_mode, f"{ref_id} | Bank: {bank_name}" if bank_name else ref_id, remarks))
+                duplicate_found = False
+                conflicting_months = []
 
-                st.success(f"✅ Payment of ₹{paid_amount} for **{months_str}** submitted for Flat {selected_flat}!")
-                st.balloons()
+                if not existing_records.empty:
+                    for _, row in existing_records.iterrows():
+                        past_months = [m.strip() for m in str(row['months_paid']).split(',')]
+                        for m in selected_months:
+                            if m in past_months:
+                                duplicate_found = True
+                                conflicting_months.append(f"{m} (Paid on {row['timestamp']} via Ref: {row['txn_id']})")
 
-    with t2:
-        st.subheader("Historical Payment Audit Log")
-        history_df = run_query("SELECT timestamp as Date, flat as 'Flat No', months_paid as 'Month(s)', amount as Amount, payment_mode as Method, txn_id as 'Txn Ref', remarks as Remarks FROM payment_history ORDER BY id DESC")
-        st.dataframe(history_df, use_container_width=True, hide_index=True)
+                # If duplicates found and user HAS NOT checked the override box
+                if duplicate_found and not allow_duplicate:
+                    st.error(f"🚨 **Duplicate Payment Detected for Flat {selected_flat}!**")
+                    st.warning("Payment records already exist for the following selected month(s):")
+                    for dup in set(conflicting_months):
+                        st.write(f"• **{dup}**")
+                    st.info("💡 **Action Needed:** If this is a re-payment, correction, or intentional duplicate entry, please check the **'⚠️ Force Submission / Allow Duplicate Payment Entry'** box at the bottom of the form and click Submit again.")
+                
+                # Execute payment insertion
+                else:
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    p_date_str = payment_date.strftime("%Y-%m-%d")
+                    months_str = ", ".join(selected_months)
 
-    with t3:
-        st.subheader("Maintenance Rate Revision History")
-        rev_df = run_query("SELECT timestamp as Date, old_amount as 'Old Rate (₹)', new_amount as 'New Rate (₹)', changed_by as 'Changed By', reason as Reason FROM maintenance_config_history ORDER BY id DESC")
-        st.dataframe(rev_df, use_container_width=True, hide_index=True)
+                    execute_db("UPDATE flats SET status='Paid', last_paid=? WHERE flat=?", (p_date_str, selected_flat))
+                    execute_db("""
+                        INSERT INTO payment_history (timestamp, flat, months_paid, amount, payment_mode, txn_id, remarks)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        now_str, 
+                        selected_flat, 
+                        months_str, 
+                        paid_amount, 
+                        f"{pay_mode} ({payer_name})" if payer_name else pay_mode, 
+                        f"{ref_id} | Bank: {bank_name}" if bank_name else ref_id, 
+                        f"[DUPLICATE OVERRIDE] {remarks}" if duplicate_found else remarks
+                    ))
 
+                    if duplicate_found:
+                        st.warning(f"⚠️ Duplicate payment recorded as requested for **{months_str}** (Flat {selected_flat}).")
+                    else:
+                        st.success(f"✅ Payment of ₹{paid_amount} for **{months_str}** successfully submitted for Flat {selected_flat}!")
+                    
+                    st.balloons()
 # -----------------------------------------------------------------------------
 # PAGE 3: AI VOICE / TEXT ASSISTANT
 # -----------------------------------------------------------------------------
