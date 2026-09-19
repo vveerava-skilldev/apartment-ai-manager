@@ -291,7 +291,6 @@ if st.sidebar.button("🚪 Logout"):
 
 st.sidebar.markdown("---")
 
-# Shared Navigation for Transparency
 navigation_options = [
     "📊 Society Dashboard & Corpus",
     "💳 Maintenance & Payments",
@@ -307,7 +306,7 @@ if is_admin:
 page = st.sidebar.radio("Navigation Menu", navigation_options)
 
 # =============================================================================
-# PAGE: SOCIETY DASHBOARD & CORPUS (COMMON VIEW)
+# PAGE: SOCIETY DASHBOARD & CORPUS
 # =============================================================================
 if page == "📊 Society Dashboard & Corpus":
     st.title("📊 Society Dashboard & Corpus Overview")
@@ -478,7 +477,7 @@ elif page == "💳 Maintenance & Payments":
                     st.balloons()
                     st.rerun()
 
-    # TAB 2: PAYMENT HISTORY LOG
+    # TAB 2: PAYMENT HISTORY LOG & ADMIN EDIT/DELETE
     with t2:
         st.subheader("📜 Payment History Log")
         
@@ -511,8 +510,41 @@ elif page == "💳 Maintenance & Payments":
                 use_container_width=True
             )
 
+            # ADMIN DELETE / MODIFY SECTION FOR PAYMENTS
+            if is_admin and not history_df.empty:
+                st.markdown("---")
+                with st.expander("🛠️ Admin: Edit or Delete Payment Record"):
+                    pay_ids = history_df["id"].tolist()
+                    selected_pay_id = st.selectbox("Select Payment ID to Modify/Delete", pay_ids)
+                    pay_row = history_df[history_df["id"] == selected_pay_id].iloc[0]
+
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1:
+                        e_flat = st.text_input("Flat Number", value=str(pay_row["flat"]), key="e_pay_flat")
+                        e_months = st.text_input("Months Paid", value=str(pay_row["months_paid"]), key="e_pay_months")
+                        e_amount = st.number_input("Amount (₹)", value=float(pay_row["amount"]), key="e_pay_amt")
+                    with col_p2:
+                        e_mode = st.text_input("Payment Mode", value=str(pay_row["payment_mode"]), key="e_pay_mode")
+                        e_txnid = st.text_input("Transaction / Ref ID", value=str(pay_row["txn_id"]), key="e_pay_txnid")
+                        e_remarks = st.text_area("Remarks", value=str(pay_row["remarks"]), key="e_pay_remarks")
+
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button("💾 Save Payment Changes", key="btn_upd_pay"):
+                            execute_db(
+                                "UPDATE payment_history SET flat=?, months_paid=?, amount=?, payment_mode=?, txn_id=?, remarks=? WHERE id=?",
+                                (e_flat, e_months, e_amount, e_mode, e_txnid, e_remarks, selected_pay_id)
+                            )
+                            st.success(f"Payment Record #{selected_pay_id} updated successfully!")
+                            st.rerun()
+                    with btn_col2:
+                        if st.button("🗑️ Delete Payment Record", key="btn_del_pay", type="primary"):
+                            execute_db("DELETE FROM payment_history WHERE id=?", (selected_pay_id,))
+                            st.success(f"Payment Record #{selected_pay_id} deleted successfully!")
+                            st.rerun()
+
 # =============================================================================
-# PAGE: FINANCIAL LEDGER & EXPENSES (COMMON VIEW)
+# PAGE: FINANCIAL LEDGER & EXPENSES
 # =============================================================================
 elif page == "💸 Financial Ledger & Expenses":
     st.title("💸 Financial Operations & Society Ledger")
@@ -523,7 +555,7 @@ elif page == "💸 Financial Ledger & Expenses":
         st.subheader("Daily Operating Expenses")
         
         if is_admin:
-            with st.expander("➕ Log New Maintenance Expense", expanded=True):
+            with st.expander("➕ Log New Maintenance Expense"):
                 with st.form("expense_form"):
                     c1, c2, c3 = st.columns(3)
                     with c1:
@@ -548,6 +580,43 @@ elif page == "💸 Financial Ledger & Expenses":
 
         exp_df = run_query("SELECT id, date, category, description, amount, approved_by FROM expenses ORDER BY id DESC")
         st.dataframe(exp_df, use_container_width=True, hide_index=True)
+
+        # ADMIN DELETE / MODIFY SECTION FOR EXPENSES
+        if is_admin and not exp_df.empty:
+            st.markdown("---")
+            with st.expander("🛠️ Admin: Edit or Delete Expense Entry"):
+                exp_ids = exp_df["id"].tolist()
+                selected_exp_id = st.selectbox("Select Expense ID to Modify/Delete", exp_ids)
+                exp_row = exp_df[exp_df["id"] == selected_exp_id].iloc[0]
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    try:
+                        ex_d_val = datetime.strptime(exp_row["date"], "%Y-%m-%d").date()
+                    except Exception:
+                        ex_d_val = datetime.now().date()
+                    e_exp_date = st.date_input("Date", ex_d_val, key="e_exp_date")
+                    cat_list = ["Electricity Bill", "Water Tankers", "Security Salary", "Cleaning Supplies", "Lift Servicing", "Misc"]
+                    cat_idx = cat_list.index(exp_row["category"]) if exp_row["category"] in cat_list else 5
+                    e_exp_cat = st.selectbox("Category", cat_list, index=cat_idx, key="e_exp_cat")
+                with c2:
+                    e_exp_amt = st.number_input("Amount (₹)", value=float(exp_row["amount"]), key="e_exp_amt")
+                    e_exp_appr = st.text_input("Approved By", value=str(exp_row["approved_by"]), key="e_exp_appr")
+                with c3:
+                    e_exp_desc = st.text_area("Description", value=str(exp_row["description"]), key="e_exp_desc")
+
+                btn_e1, btn_e2 = st.columns(2)
+                with btn_e1:
+                    if st.button("💾 Save Expense Changes", key="btn_upd_exp"):
+                        execute_db("UPDATE expenses SET date=?, category=?, description=?, amount=?, approved_by=? WHERE id=?",
+                                   (e_exp_date.strftime("%Y-%m-%d"), e_exp_cat, e_exp_desc, e_exp_amt, e_exp_appr, selected_exp_id))
+                        st.success(f"Expense Record #{selected_exp_id} updated!")
+                        st.rerun()
+                with btn_e2:
+                    if st.button("🗑️ Delete Expense Record", key="btn_del_exp", type="primary"):
+                        execute_db("DELETE FROM expenses WHERE id=?", (selected_exp_id,))
+                        st.success(f"Expense Record #{selected_exp_id} deleted!")
+                        st.rerun()
 
     with e2:
         st.subheader("Corpus Fund Ledger (Sinking Fund)")
@@ -575,8 +644,42 @@ elif page == "💸 Financial Ledger & Expenses":
         corpus_df = run_query("SELECT * FROM corpus ORDER BY id DESC")
         st.dataframe(corpus_df, use_container_width=True, hide_index=True)
 
+        # ADMIN DELETE / MODIFY SECTION FOR CORPUS
+        if is_admin and not corpus_df.empty:
+            st.markdown("---")
+            with st.expander("🛠️ Admin: Edit or Delete Corpus Entry"):
+                corp_ids = corpus_df["id"].tolist()
+                selected_corp_id = st.selectbox("Select Corpus Record ID to Modify/Delete", corp_ids)
+                corp_row = corpus_df[corpus_df["id"] == selected_corp_id].iloc[0]
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    try:
+                        cp_d_val = datetime.strptime(corp_row["date"], "%Y-%m-%d").date()
+                    except Exception:
+                        cp_d_val = datetime.now().date()
+                    e_c_date = st.date_input("Date", cp_d_val, key="e_c_date")
+                    e_c_type = st.selectbox("Type", ["Contribution", "Withdrawal"], index=0 if corp_row["type"] == "Contribution" else 1, key="e_c_type")
+                    e_c_src = st.text_input("Source / Vendor", value=str(corp_row["flat_or_vendor"]), key="e_c_src")
+                with c2:
+                    e_c_amt = st.number_input("Amount (₹)", value=float(corp_row["amount"]), key="e_c_amt")
+                    e_c_desc = st.text_area("Description", value=str(corp_row["description"]), key="e_c_desc")
+
+                btn_c1, btn_c2 = st.columns(2)
+                with btn_c1:
+                    if st.button("💾 Save Corpus Changes", key="btn_upd_corp"):
+                        execute_db("UPDATE corpus SET date=?, type=?, flat_or_vendor=?, description=?, amount=? WHERE id=?",
+                                   (e_c_date.strftime("%Y-%m-%d"), e_c_type, e_c_src, e_c_desc, e_c_amt, selected_corp_id))
+                        st.success(f"Corpus Record #{selected_corp_id} updated!")
+                        st.rerun()
+                with btn_c2:
+                    if st.button("🗑️ Delete Corpus Record", key="btn_del_corp", type="primary"):
+                        execute_db("DELETE FROM corpus WHERE id=?", (selected_corp_id,))
+                        st.success(f"Corpus Record #{selected_corp_id} deleted!")
+                        st.rerun()
+
 # =============================================================================
-# PAGE: AMC & VENDOR CONTRACTS (COMMON VIEW)
+# PAGE: AMC & VENDOR CONTRACTS
 # =============================================================================
 elif page == "🛠️ AMC & Vendor Contracts":
     st.title("🛠️ Vendor Contracts & AMC Tracker")
@@ -609,8 +712,43 @@ elif page == "🛠️ AMC & Vendor Contracts":
     amc_df = run_query("SELECT * FROM amc_schedules ORDER BY next_due ASC")
     st.dataframe(amc_df, use_container_width=True, hide_index=True)
 
+    # ADMIN DELETE / MODIFY SECTION FOR AMC
+    if is_admin and not amc_df.empty:
+        st.markdown("---")
+        with st.expander("🛠️ Admin: Edit or Delete Vendor/AMC Contract"):
+            amc_ids = amc_df["id"].tolist()
+            selected_amc_id = st.selectbox("Select AMC Contract ID to Modify/Delete", amc_ids)
+            amc_row = amc_df[amc_df["id"] == selected_amc_id].iloc[0]
+
+            c1, c2 = st.columns(2)
+            with c1:
+                e_amc_eq = st.text_input("Equipment Name", value=str(amc_row["equipment"]), key="e_amc_eq")
+                e_amc_v = st.text_input("Vendor", value=str(amc_row["vendor"]), key="e_amc_v")
+                e_amc_cp = st.text_input("Contact Person", value=str(amc_row["contact_person"]), key="e_amc_cp")
+            with c2:
+                try:
+                    d_val = datetime.strptime(amc_row["next_due"], "%Y-%m-%d").date()
+                except Exception:
+                    d_val = datetime.now().date()
+                e_amc_due = st.date_input("Next Due Date", d_val, key="e_amc_due")
+                e_amc_cost = st.number_input("Cost (₹)", value=float(amc_row["cost"]), key="e_amc_cost")
+                e_amc_alert = st.number_input("Alert Lead Days", value=int(amc_row["alert_days"]), key="e_amc_alert")
+
+            btn_a1, btn_a2 = st.columns(2)
+            with btn_a1:
+                if st.button("💾 Save Contract Changes", key="btn_upd_amc"):
+                    execute_db("UPDATE amc_schedules SET equipment=?, vendor=?, contact_person=?, next_due=?, cost=?, alert_days=? WHERE id=?",
+                               (e_amc_eq, e_amc_v, e_amc_cp, e_amc_due.strftime("%Y-%m-%d"), e_amc_cost, e_amc_alert, selected_amc_id))
+                    st.success(f"AMC Contract #{selected_amc_id} updated!")
+                    st.rerun()
+            with btn_a2:
+                if st.button("🗑️ Delete AMC Contract", key="btn_del_amc", type="primary"):
+                    execute_db("DELETE FROM amc_schedules WHERE id=?", (selected_amc_id,))
+                    st.success(f"AMC Contract #{selected_amc_id} deleted!")
+                    st.rerun()
+
 # =============================================================================
-# PAGE: HELPDESK & COMPLAINTS (COMMON VIEW WITH MY-FLAT FILTER)
+# PAGE: HELPDESK & COMPLAINTS
 # =============================================================================
 elif page == "🚨 Helpdesk & Complaints":
     st.title("🚨 Resident Complaints & Helpdesk")
@@ -642,7 +780,6 @@ elif page == "🚨 Helpdesk & Complaints":
     with t2:
         st.subheader("Society Complaints Log")
         
-        # Filtering for Residents so they can check common issues or filter by their flat
         if not is_admin:
             filter_mode = st.radio("View Filter:", ["All Society Issues (Common View)", f"Only My Flat ({st.session_state['user_flat']})"], horizontal=True)
             if "Only My Flat" in filter_mode:
@@ -664,19 +801,28 @@ elif page == "🚨 Helpdesk & Complaints":
                     
                     if is_admin:
                         st.markdown("---")
-                        st.markdown("##### 🛠️ Admin Status Management")
+                        st.markdown("##### 🛠️ Admin Status & Ticket Management")
                         with st.form(f"update_ticket_{row['id']}"):
                             new_status = st.selectbox("Status", ["Open", "In Progress", "Resolved"], index=["Open", "In Progress", "Resolved"].index(row['status']))
                             res_notes = st.text_area("Resolution Remarks", value=row['resolution_notes'])
-                            update_sub = st.form_submit_button("Update Ticket")
+                            
+                            c_t1, c_t2 = st.columns(2)
+                            with c_t1:
+                                update_sub = st.form_submit_button("💾 Update Ticket")
+                            with c_t2:
+                                delete_sub = st.form_submit_button("🗑️ Delete Ticket")
 
                         if update_sub:
                             execute_db("UPDATE issues SET status=?, resolution_notes=? WHERE id=?", (new_status, res_notes, row['id']))
                             st.success("Ticket updated!")
                             st.rerun()
+                        if delete_sub:
+                            execute_db("DELETE FROM issues WHERE id=?", (row['id'],))
+                            st.success("Ticket deleted!")
+                            st.rerun()
 
 # =============================================================================
-# PAGE: MEETINGS & MOM LOGS (SHARED)
+# PAGE: MEETINGS & MOM LOGS
 # =============================================================================
 elif page == "📅 Meetings & MoM Logs":
     st.title("📅 General Body Meetings & Minutes")
@@ -705,8 +851,46 @@ elif page == "📅 Meetings & MoM Logs":
     meetings_df = run_query("SELECT * FROM meetings ORDER BY id DESC")
     st.dataframe(meetings_df, use_container_width=True, hide_index=True)
 
+    # ADMIN DELETE / MODIFY SECTION FOR MEETINGS
+    if is_admin and not meetings_df.empty:
+        st.markdown("---")
+        with st.expander("🛠️ Admin: Edit or Delete Meeting Record"):
+            m_ids = meetings_df["id"].tolist()
+            selected_m_id = st.selectbox("Select Meeting ID to Modify/Delete", m_ids)
+            m_row = meetings_df[meetings_df["id"] == selected_m_id].iloc[0]
+
+            c1, c2 = st.columns(2)
+            with c1:
+                try:
+                    m_d_val = datetime.strptime(m_row["date"], "%Y-%m-%d").date()
+                except Exception:
+                    m_d_val = datetime.now().date()
+                e_m_date = st.date_input("Meeting Date", m_d_val, key="e_m_date")
+                e_m_time = st.text_input("Time", value=str(m_row["time"]), key="e_m_time")
+                e_m_title = st.text_input("Title", value=str(m_row["title"]), key="e_m_title")
+            with c2:
+                e_m_att = st.text_input("Attendees", value=str(m_row["attendees"]), key="e_m_att")
+                m_stat_list = ["Scheduled", "Completed", "Cancelled"]
+                m_stat_idx = m_stat_list.index(m_row["status"]) if m_row["status"] in m_stat_list else 0
+                e_m_stat = st.selectbox("Status", m_stat_list, index=m_stat_idx, key="e_m_stat")
+
+            e_m_mom = st.text_area("Minutes of Meeting (MoM)", value=str(m_row["summary_mom"]), key="e_m_mom")
+
+            btn_m1, btn_m2 = st.columns(2)
+            with btn_m1:
+                if st.button("💾 Save Meeting Changes", key="btn_upd_m"):
+                    execute_db("UPDATE meetings SET date=?, time=?, title=?, attendees=?, summary_mom=?, status=? WHERE id=?",
+                               (e_m_date.strftime("%Y-%m-%d"), e_m_time, e_m_title, e_m_att, e_m_mom, e_m_stat, selected_m_id))
+                    st.success(f"Meeting #{selected_m_id} updated!")
+                    st.rerun()
+            with btn_m2:
+                if st.button("🗑️ Delete Meeting Record", key="btn_del_m", type="primary"):
+                    execute_db("DELETE FROM meetings WHERE id=?", (selected_m_id,))
+                    st.success(f"Meeting #{selected_m_id} deleted!")
+                    st.rerun()
+
 # =============================================================================
-# PAGE: ADMIN SETTINGS (ADMIN ONLY)
+# PAGE: ADMIN SETTINGS
 # =============================================================================
 elif page == "⚙️ Admin Settings":
     st.title("⚙️ System Administration & User Accounts")
@@ -733,22 +917,62 @@ elif page == "⚙️ Admin Settings":
 
     with t2:
         st.subheader("Flats Master List")
-        st.dataframe(run_query("SELECT * FROM flats ORDER BY flat"), use_container_width=True, hide_index=True)
+        flat_rows = run_query("SELECT * FROM flats ORDER BY flat")
+        st.dataframe(flat_rows, use_container_width=True, hide_index=True)
+
+        if not flat_rows.empty:
+            st.markdown("---")
+            with st.expander("🛠️ Edit or Delete Flat Entry"):
+                sel_f = st.selectbox("Select Flat to Modify/Delete", flat_rows["flat"].tolist())
+                f_data = flat_rows[flat_rows["flat"] == sel_f].iloc[0]
+
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    e_f_owner = st.text_input("Owner Name", value=str(f_data["owner_name"]), key="e_f_owner")
+                    e_f_contact = st.text_input("Contact", value=str(f_data["contact"]), key="e_f_contact")
+                with c_f2:
+                    e_f_status = st.selectbox("Status", ["Paid", "Pending"], index=0 if f_data["status"] == "Paid" else 1, key="e_f_status")
+                    e_f_lastpaid = st.text_input("Last Paid Date", value=str(f_data["last_paid"]), key="e_f_lastpaid")
+
+                col_f_btn1, col_f_btn2 = st.columns(2)
+                with col_f_btn1:
+                    if st.button("💾 Save Flat Changes", key="btn_upd_f"):
+                        execute_db("UPDATE flats SET owner_name=?, contact=?, status=?, last_paid=? WHERE flat=?",
+                                   (e_f_owner, e_f_contact, e_f_status, e_f_lastpaid, sel_f))
+                        st.success(f"Flat {sel_f} updated successfully!")
+                        st.rerun()
+                with col_f_btn2:
+                    if st.button("🗑️ Delete Flat", key="btn_del_f", type="primary"):
+                        execute_db("DELETE FROM flats WHERE flat=?", (sel_f,))
+                        st.success(f"Flat {sel_f} deleted!")
+                        st.rerun()
 
     with t3:
         st.subheader("User Passwords & Roles")
         users_df = run_query("SELECT username, role, flat FROM users")
         st.dataframe(users_df, use_container_width=True, hide_index=True)
 
-        with st.expander("➕ Add / Reset User Password"):
-            with st.form("user_pwd_form"):
-                u_name = st.text_input("Username / Flat")
-                u_pass = st.text_input("Password")
-                u_role = st.selectbox("Role", ["Resident", "Admin"])
-                u_flat = st.text_input("Associated Flat No (Leave blank for Admin)")
-                sub_u = st.form_submit_button("Save User Credentials")
+        st.markdown("---")
+        c_u1, c_u2 = st.columns(2)
+        with c_u1:
+            with st.expander("➕ Add / Reset User Credentials"):
+                with st.form("user_pwd_form"):
+                    u_name = st.text_input("Username / Flat")
+                    u_pass = st.text_input("Password")
+                    u_role = st.selectbox("Role", ["Resident", "Admin"])
+                    u_flat = st.text_input("Associated Flat No (Leave blank for Admin)")
+                    sub_u = st.form_submit_button("Save User Credentials")
 
-            if sub_u:
-                execute_db("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?)", (u_name, u_pass, u_role, u_flat))
-                st.success("User credentials saved!")
-                st.rerun()
+                if sub_u:
+                    execute_db("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?)", (u_name, u_pass, u_role, u_flat))
+                    st.success("User credentials saved!")
+                    st.rerun()
+
+        with c_u2:
+            with st.expander("🗑️ Delete User Account"):
+                if not users_df.empty:
+                    del_u_name = st.selectbox("Select User Account to Delete", users_df["username"].tolist())
+                    if st.button("🗑️ Delete Selected User", key="btn_del_user", type="primary"):
+                        execute_db("DELETE FROM users WHERE username=?", (del_u_name,))
+                        st.success(f"User account '{del_u_name}' deleted!")
+                        st.rerun()
